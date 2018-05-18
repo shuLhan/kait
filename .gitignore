@@ -1,0 +1,4 @@
+*.prof
+/cover.html
+/cover.out
+/test.conf
