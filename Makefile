@@ -27,7 +27,7 @@ $(COVER_HTML): $(COVER_OUT)
 	go tool cover -html=$< -o $@
 
 $(COVER_OUT): $(SRC) $(SRC_TEST)
-	go test -coverprofile=$@ ./... || rm -f $@
+	go test -race -coverprofile=$@ ./... || rm -f $@
 
 coverbrowse: $(COVER_HTML)
 	xdg-open $<
