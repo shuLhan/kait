@@ -10,18 +10,28 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shuLhan/share/lib/ini"
 	"github.com/shuLhan/share/lib/test"
 )
 
-var (
-	hookCSPTest = newHookCSP()
-)
-
 func testHookCSPServeHTTP(t *testing.T) {
+	cfg := &ini.Section{
+		Vars: []*ini.Variable{{
+			Key:      "mattermost-endpoint",
+			KeyLower: "mattermost-endpoint",
+			Value:    "http://172.31.3.185:8065/hooks/t934mqsdm3rxpytuhzfearyifc",
+		}, {
+			Key:      "mattermost-channel",
+			KeyLower: "mattermost-channel",
+			Value:    "log_test",
+		}},
+	}
+	hookCSPTest := newHookCSP(cfg)
+
 	cases := []struct {
 		desc    string
 		reqBody string
-		exp     *CSPReport
+		exp     *message
 	}{{
 		desc: "Valid CSP body",
 		reqBody: `{
@@ -34,7 +44,10 @@ func testHookCSPServeHTTP(t *testing.T) {
   }
 }
 `,
-		exp: cspReportTest[0],
+		exp: &message{
+			mode:    msgModeCSP,
+			content: cspReportTest[0],
+		},
 	}}
 
 	for _, c := range cases {
@@ -48,7 +61,7 @@ func testHookCSPServeHTTP(t *testing.T) {
 
 		hookCSPTest.ServeHTTP(res, req)
 
-		got := <-hookCSPTest.ch
+		got := <-hookCSPTest.chMsg
 
 		test.Assert(t, "", c.exp, got, true)
 	}

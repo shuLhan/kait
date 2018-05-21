@@ -6,6 +6,7 @@ package kait
 
 import (
 	"bytes"
+	"encoding/json"
 )
 
 //
@@ -20,16 +21,16 @@ type CSPReport struct {
 }
 
 //
-// CSPReportWrapper define the CSP wrapper for POST body.
+// CSPWrapper define the CSP wrapper for POST body.
 //
-type CSPReportWrapper struct {
-	CSPReport CSPReport `json:"csp-report"`
+type CSPWrapper struct {
+	Report *CSPReport `json:"csp-report"`
 }
 
 //
 // MarshalKV convert the report into `key=value key2=value2 ...` format.
 //
-func (report *CSPReport) MarshalKV() string {
+func (report *CSPReport) MarshalKV() ([]byte, error) {
 	var buf bytes.Buffer
 
 	_, _ = buf.WriteString("document-uri=")
@@ -45,5 +46,12 @@ func (report *CSPReport) MarshalKV() string {
 	_, _ = buf.WriteString(" original-policy=")
 	_, _ = buf.WriteString(report.OriginalPolicy)
 
-	return buf.String()
+	return buf.Bytes(), nil
+}
+
+//
+// MarshalJSON convert the report into JSON.
+//
+func (report *CSPReport) MarshalJSON() ([]byte, error) {
+	return json.Marshal(report)
 }

@@ -4,15 +4,39 @@
 
 package kait
 
+type messageFormat uint
+
+const (
+	msgFormatKV messageFormat = 1 << iota
+	msgFormatJSON
+)
+
 type messageMode uint
 
 const (
-	msgModeKeyValue messageMode = 1 << iota
-	msgModeJSON
+	msgModeCSP messageMode = 1 << iota
 )
 
 type message struct {
 	mode    messageMode
-	channel string
-	content string
+	content messageContent
+}
+
+func (msg *message) getContent(format messageFormat) string {
+	var (
+		bb  []byte
+		err error
+	)
+	switch format {
+	case msgFormatKV:
+		bb, err = msg.content.MarshalKV()
+	case msgFormatJSON:
+		bb, err = msg.content.MarshalJSON()
+	}
+
+	if err != nil {
+		return ""
+	}
+
+	return string(bb)
 }

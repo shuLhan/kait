@@ -42,8 +42,11 @@ func TestMarshalKV(t *testing.T) {
 	for _, c := range cases {
 		t.Log(c.desc)
 
-		got := c.in.MarshalKV()
+		got, err := c.in.MarshalKV()
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		test.Assert(t, "cspreport", c.exp, got, true)
+		test.Assert(t, "cspreport", c.exp, string(got), true)
 	}
 }

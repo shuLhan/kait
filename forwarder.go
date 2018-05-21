@@ -6,11 +6,8 @@ package kait
 
 //
 // Forwarder is an interface that implement message forwarder from Kait to
-// other consumer.
+// other, external, consumer.
 //
 type Forwarder interface {
-	Start()
-	Stop()
-	MessageMode() messageMode
-	Forward(*message)
+	Forward(*message, func())
 }

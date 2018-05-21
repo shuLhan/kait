@@ -20,18 +20,16 @@ const (
 )
 
 type mattermost struct {
-	msgMode messageMode
-	webhook string
-	channel string
-	cl      *http.Client
-	in      chan *message
-	running chan bool
+	msgFormat messageFormat
+	endpoint  string
+	channel   string
+	cl        *http.Client
 }
 
 //
 // NewMattermost create, initialize, and return forwarder for Mattermost.
 //
-func NewMattermost(webhook, channel string) Forwarder {
+func NewMattermost(endpoint, channel string) Forwarder {
 	var tr = &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true, //nolint:gas
@@ -39,15 +37,13 @@ func NewMattermost(webhook, channel string) Forwarder {
 	}
 
 	mm := &mattermost{
-		msgMode: msgModeKeyValue,
-		webhook: webhook,
-		channel: channel,
+		msgFormat: msgFormatKV,
+		endpoint:  endpoint,
+		channel:   channel,
 		cl: &http.Client{
 			Timeout:   defTimeout,
 			Transport: tr,
 		},
-		in:      make(chan *message, 64),
-		running: make(chan bool),
 	}
 
 	return mm
@@ -56,75 +52,49 @@ func NewMattermost(webhook, channel string) Forwarder {
 //
 // Forward message into mattermost
 //
-func (mm *mattermost) Forward(msg *message) {
-	mm.in <- msg
-}
+func (mm *mattermost) Forward(msg *message, cbOnFinish func()) {
+	var (
+		err     error
+		req     *http.Request
+		res     *http.Response
+		content string
+		buf     bytes.Buffer
+	)
 
-//
-// MessageMode return the desired message mode to be forwarded.
-//
-func (mm *mattermost) MessageMode() messageMode {
-	return mm.msgMode
-}
-
-//
-// Start the mattermost forwarder.
-//
-func (mm *mattermost) Start() {
-	running := true
-
-	for running {
-		select {
-		case msg := <-mm.in:
-			mm.forward(msg)
-		case running = <-mm.running:
-		}
-	}
-}
-
-//
-// Stop the mattermost forwarder.
-//
-func (mm *mattermost) Stop() {
-	mm.running <- false
-}
-
-func (mm *mattermost) forward(msg *message) {
 	if msg == nil {
-		return
-	}
-	if len(msg.content) == 0 {
-		return
+		goto out
 	}
 
-	content := text.StringJSONEscape(msg.content)
+	content = msg.getContent(mm.msgFormat)
+	if len(content) == 0 {
+		goto out
+	}
 
-	var buf bytes.Buffer
+	content = text.StringJSONEscape(content)
 
 	buf.WriteByte('{')
-	buf.WriteString(`"channel":"`)
-	if len(msg.channel) > 0 {
-		buf.WriteString(msg.channel)
-	} else {
+	if len(mm.channel) > 0 {
+		buf.WriteString(`"channel":"`)
 		buf.WriteString(mm.channel)
+		buf.WriteString(`",`)
 	}
 
-	buf.WriteString(`","text":"`)
+	buf.WriteString(`"text":"`)
 	buf.WriteString(content)
 	buf.WriteString(`"}`)
 
-	req, err := http.NewRequest(http.MethodPost, mm.webhook, &buf)
+	req, err = http.NewRequest(http.MethodPost, mm.endpoint, &buf)
 	if err != nil {
 		log.Println("ForwardCSP: http.NewRequest:", err)
-		return
+		goto out
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
-	res, err := mm.cl.Do(req)
+	res, err = mm.cl.Do(req)
 	if err != nil {
 		log.Println("ForwardCSP: cl.Do:", err)
-		return
+		goto out
 	}
 
 	_, err = ioutil.ReadAll(res.Body)
@@ -136,4 +106,7 @@ func (mm *mattermost) forward(msg *message) {
 	if err != nil {
 		log.Println("ForwardCSP: res.Body.Close:", err)
 	}
+
+out:
+	cbOnFinish()
 }

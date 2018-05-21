@@ -9,7 +9,6 @@
 package kait
 
 import (
-	"encoding/json"
 	"log"
 	"net"
 	"net/http"
@@ -28,20 +27,21 @@ const (
 	keyPrefix = "prefix"
 
 	sectionKait = "kait"
-	sectionFW   = "forwarder"
 	sectionCSP  = "csp"
 
-	subMM = "mattermost"
+	keyMMChan     = "mattermost-channel"
+	keyMMEndpoint = "mattermost-endpoint"
 
-	keyDefChan = "default-channel"
-	keyWebhook = "webhook"
-	keyMMChan  = "mattermost-channel"
+	maxMessageBuffer = 64
+	maxRoutines      = maxMessageBuffer * 2
 )
 
 var (
 	defServerRTO            = 3 * time.Second
 	defServerWTO            = 5 * time.Second
 	defServerMaxHeaderBytes = 1024 * 1024 // 1 MB
+
+	nRoutines int32
 )
 
 //
@@ -55,7 +55,6 @@ type Kait struct {
 	server     *http.Server
 	env        *ini.Ini
 	hookCSP    *hookCSP
-	fwds       []Forwarder
 	running    chan bool
 }
 
@@ -71,7 +70,6 @@ func (kait *Kait) Init(envFile string) (err error) {
 
 	kait.initServer()
 	kait.initCSP()
-	kait.initForwarders()
 
 	return
 }
@@ -96,60 +94,33 @@ func (kait *Kait) initServer() {
 }
 
 func (kait *Kait) initCSP() {
-	sec := kait.env.GetSection(sectionCSP, "")
-	if sec == nil {
+	cfg := kait.env.GetSection(sectionCSP, "")
+	if cfg == nil {
 		return
 	}
 
-	kait.hookCSP = newHookCSP()
-
-	kait.hookCSP.prefix, _ = sec.Get(keyPrefix, defCSPPrefix)
-	kait.hookCSP.mmChan, _ = sec.Get(keyMMChan, "")
+	kait.hookCSP = newHookCSP(cfg)
+	if kait.hookCSP == nil {
+		return
+	}
 
 	kait.mux.Handle(kait.prefix+kait.hookCSP.prefix, kait.hookCSP)
-}
 
-func (kait *Kait) initForwarders() {
-	kait.initMattermost()
-}
-
-func (kait *Kait) initMattermost() {
-	sec := kait.env.GetSection(sectionFW, subMM)
-	if sec == nil {
-		return
-	}
-
-	webhook, _ := sec.Get(keyWebhook, "")
-	defchan, _ := sec.Get(keyDefChan, "")
-
-	if len(webhook) > 0 {
-		fwMM := NewMattermost(webhook, defchan)
-		kait.fwds = append(kait.fwds, fwMM)
-	}
+	go kait.hookCSP.Start()
 }
 
 //
 // Start will run all forwarders as go routine and start the HTTP server.
 //
 func (kait *Kait) Start() (err error) {
-	for x := range kait.fwds {
-		kait.fwds[x].Start()
-	}
-
 	kait.listener, err = net.Listen("tcp", kait.listenAddr)
 	if err != nil {
 		return
 	}
 
-	go kait.forwarder()
-
 	err = kait.server.Serve(kait.listener)
 	if err != nil {
 		log.Println("Start.Serve:", err)
-	}
-
-	for x := range kait.fwds {
-		kait.fwds[x].Stop()
 	}
 
 	return
@@ -160,41 +131,4 @@ func (kait *Kait) Start() (err error) {
 //
 func (kait *Kait) Stop() {
 	kait.running <- false
-}
-
-func (kait *Kait) forwarder() {
-	running := true
-
-	for running {
-		select {
-		case cspReport := <-kait.hookCSP.ch:
-			kait.forwardCSP(cspReport)
-		case running = <-kait.running:
-		}
-	}
-}
-
-func (kait *Kait) forwardCSP(report *CSPReport) {
-	var err error
-	var bb []byte
-	msg := new(message)
-
-	for _, fw := range kait.fwds {
-		switch fw.MessageMode() {
-		case msgModeKeyValue:
-			msg.mode = msgModeKeyValue
-			msg.content = report.MarshalKV()
-
-		case msgModeJSON:
-			msg.mode = msgModeJSON
-			bb, err = json.Marshal(report)
-			if err != nil {
-				log.Println("forwardCSP: json.Marshal:", err)
-				return
-			}
-			msg.content = string(bb)
-		}
-
-		fw.Forward(msg)
-	}
 }
