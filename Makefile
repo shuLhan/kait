@@ -27,7 +27,7 @@ $(COVER_HTML): $(COVER_OUT)
 	go tool cover -html=$< -o $@
 
 $(COVER_OUT): $(SRC) $(SRC_TEST)
-	go test -coverprofile=$@ ./...
+	go test -coverprofile=$@ ./... || rm -f $@
 
 coverbrowse: $(COVER_HTML)
 	xdg-open $<
@@ -40,5 +40,5 @@ clean:
 	rm -f ./**/${CPU_PROF}
 	rm -f ./**/${MEM_PROF}
 
-distclean:
+distclean: clean
 	go clean -i ./...
